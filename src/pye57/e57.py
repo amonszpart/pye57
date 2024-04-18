@@ -45,6 +45,9 @@ SUPPORTED_POINT_FIELDS = {
     "columnIndex": "H",
     "cartesianInvalidState": "b",
     "sphericalInvalidState": "b",
+    "nor:normalX": "d",
+    "nor:normalY": "d",
+    "nor:normalZ": "d",
 }
 
 
@@ -217,6 +220,25 @@ class E57:
             data["cartesianZ"] = xyz[:, 2]
         return data
 
+    @staticmethod
+    def _safe_get_node_in_scan_header(scan_header: "ScanHeader", name_attr: str,
+                                      value_default: Any) -> Any:
+        """Safer call for potentially missing attributes.
+
+        In write_scan_raw, getattr calls ScanHeader.__getitem__(), which
+        calls self.node[name_attr], and throws an exception, that can't
+        always be caught:
+          "pye57.libe57.E57Exception: E57 element path well formed but not defined (ErrorPathUndefined)"
+        So we need to check if the attribute exists on beforehand.
+        """
+        try:
+            return getattr(scan_header, name_attr, value_default) \
+                if any(name_attr == e.elementName() for e in scan_header.node) \
+                else value_default
+        except libe57.E57Exception as e:
+            print(f"[ERROR {type(e)}] {e}")
+            return value_default
+
     def write_scan_raw(self, data: Dict, *, name=None, rotation=None, translation=None, scan_header=None):
         for field in data.keys():
             if field not in SUPPORTED_POINT_FIELDS:
@@ -231,9 +253,14 @@ class E57:
         if name is None:
             name = getattr(scan_header, "name", "Scan %s" % len(self.data3d))
 
-        temperature = getattr(scan_header, "temperature", 0)
-        relativeHumidity = getattr(scan_header, "relativeHumidity", 0)
-        atmosphericPressure = getattr(scan_header, "atmosphericPressure", 0)
+        temperature = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                        name_attr="temperature", value_default=0)
+        relativeHumidity = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                             name_attr="relativeHumidity",
+                                                             value_default=0)
+        atmosphericPressure = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                                name_attr="atmosphericPressure",
+                                                                value_default=0)
 
         scan_node = libe57.StructureNode(self.image_file)
         scan_node.set("guid", libe57.StringNode(self.image_file, "{%s}" % uuid.uuid4()))
@@ -323,10 +350,18 @@ class E57:
             translation_node.set("z", libe57.FloatNode(self.image_file, translation[2]))
             pose_node.set("translation", translation_node)
 
-        start_datetime = getattr(scan_header, "acquisitionStart_dateTimeValue", 0)
-        start_atomic = getattr(scan_header, "acquisitionStart_isAtomicClockReferenced", False)
-        end_datetime = getattr(scan_header, "acquisitionEnd_dateTimeValue", 0)
-        end_atomic = getattr(scan_header, "acquisitionEnd_isAtomicClockReferenced", False)
+        start_datetime = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                           name_attr="acquisitionStart_dateTimeValue",
+                                                           value_default=0)
+        start_atomic = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                         name_attr="acquisitionStart_isAtomicClockReferenced",
+                                                         value_default=False)
+        end_datetime = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                         name_attr="acquisitionEnd_dateTimeValue",
+                                                         value_default=0)
+        end_atomic = E57._safe_get_node_in_scan_header(scan_header=scan_header,
+                                                       name_attr="acquisitionEnd_isAtomicClockReferenced",
+                                                       value_default=False)
         acquisition_start = libe57.StructureNode(self.image_file)
         scan_node.set("acquisitionStart", acquisition_start)
         acquisition_start.set("dateTimeValue", libe57.FloatNode(self.image_file, start_datetime))
@@ -376,15 +411,15 @@ class E57:
             max_row = np.max(data["rowIndex"])
             min_col = np.min(data["columnIndex"])
             max_col = np.max(data["columnIndex"])
-            points_prototype.set("rowIndex", libe57.IntegerNode(self.image_file, 0, min_row, max_row))
+            points_prototype.set("rowIndex", libe57.IntegerNode(self.image_file, min_row, min_row, max_row))
             field_names.append("rowIndex")
-            points_prototype.set("columnIndex", libe57.IntegerNode(self.image_file, 0, min_col, max_col))
+            points_prototype.set("columnIndex", libe57.IntegerNode(self.image_file, min_col, min_col, max_col))
             field_names.append("columnIndex")
 
         if "cartesianInvalidState" in data:
             min_state = np.min(data["cartesianInvalidState"])
             max_state = np.max(data["cartesianInvalidState"])
-            points_prototype.set("cartesianInvalidState", libe57.IntegerNode(self.image_file, 0, min_state, max_state))
+            points_prototype.set("cartesianInvalidState", libe57.IntegerNode(self.image_file, min_state, min_state, max_state))
             field_names.append("cartesianInvalidState")
 
         # other fields
