@@ -233,7 +233,8 @@ class E57:
         """
         try:
             return getattr(scan_header, name_attr, value_default) \
-                if any(name_attr == e.elementName() for e in scan_header.node) \
+                if (scan_header is not None \
+                    and any(name_attr == e.elementName() for e in scan_header.node)) \
                 else value_default
         except libe57.E57Exception as e:
             print(f"[ERROR {type(e)}] {e}")
